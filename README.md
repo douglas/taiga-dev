@@ -113,7 +113,7 @@ an email: contato at douglasandrade.com.
 
 ## Credits
 
-This work is mainly based on @douglasmiranda - congrats, Xará ;-)
+This project is heavily based on Douglas Miranda (@douglasmiranda) work - congrats, Xará ;-)
 
 https://github.com/douglasmiranda/docker-taiga
 
