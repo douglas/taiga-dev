@@ -1,0 +1,106 @@
+version: '2.1'
+
+volumes:
+  postgres_data: {}
+  taiga_backend_media: {}
+
+services:
+  # Redis Server
+  redis:
+    image: redis:3.2.8-alpine
+    container_name: taiga-redis
+    healthcheck:
+      test: "exit 0"
+
+  # RabbitMQ Server
+  rabbitmq:
+    image: rabbitmq:3.6.8-alpine
+    container_name: taiga-rabbitmq
+    ports:
+      - "15672:15672"  # here, we can access rabbitmq management plugin
+    environment:
+      - RABBITMQ_ERLANG_COOKIE='secret_cookie_here'
+      - RABBITMQ_DEFAULT_USER=taiga
+      - RABBITMQ_DEFAULT_PASS=taiga
+      - RABBITMQ_DEFAULT_VHOST=taiga
+    healthcheck:
+      test: "exit 0"
+
+  # PostgreSQL Server
+  postgresql:
+    container_name: taiga-postgres
+    image: postgres:9.6.2-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=taiga
+      - POSTGRES_DB=taiga
+      - POSTGRES_PASSWORD=123
+    healthcheck:
+      test: "exit 0"
+
+  # Taiga Events
+  events:
+      container_name: taiga-events
+      build: services/events/
+      environment:
+        - TAIGA_SECRET=DJANGO_SECRET_KEY
+      entrypoint: ['/scripts/entrypoint.sh']
+      command: ['coffee', 'index.coffee']
+      depends_on:
+        rabbitmq:
+          condition: service_healthy
+
+  # Django (Taiga backend and api server)
+  backend:
+    build: taiga-back
+    container_name: taiga-backend
+    volumes:
+      - ./taiga-back:/taiga_backend
+      - ./services/backend/scripts:/backend_scripts
+      - taiga_backend_media:/taiga_backend/media
+      - /taiga_backend/static-root
+    environment:
+      - DJANGO_DEBUG=True
+      - DJANGO_SECRET_KEY=DJANGO_SECRET_KEY
+      - DJANGO_DB_USER=taiga
+      - DJANGO_DB_NAME=taiga
+      - DJANGO_DB_PASSWORD=123
+      - DJANGO_ALLOWED_HOSTS=taiga.dev,localhost,127.0.0.1
+    entrypoint: ['/backend_scripts/entrypoint.sh']
+    command: ['gunicorn', '-b', '0.0.0.0:8000', 'taiga.wsgi']
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      celery:
+        condition: service_healthy
+
+  # Taiga Frontend
+  frontend:
+    image: nginx:1.11.10-alpine
+    container_name: taiga-frontend
+    volumes:
+      - ./taiga-front:/taiga_frontend
+      - ./services/frontend:/frontend
+    volumes_from:
+      - backend:ro
+    ports:
+      - "80:80"
+    entrypoint: ['/frontend/scripts/entrypoint.sh']
+    command: ["nginx", "-g", "daemon off;"]      
+
+  # Celery worker
+  celery:
+    build: services/celery
+    container_name: taiga-celery
+    volumes:
+      - ./taiga-back:/taiga_backend
+    user: taiga
+    command: ['celery', '-A', 'taiga', 'worker', '-c', '4', '--loglevel', 'info']
+    healthcheck:
+      test: "exit 0"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy

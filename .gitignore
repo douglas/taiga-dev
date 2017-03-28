@@ -87,3 +87,7 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+# Ignore taiga-back and taiga-front
+taiga-back
+taiga-front
